@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wheel Fitment Sim</title>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --card-bg: rgba(26, 26, 26, 0.9); 
+            --text-color: #e0e0e0;
+            --accent-color: #ff4500;
+            --compare-color: #00bfff;
+            --new-spec-color: #e74c3c;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        body { 
+            color: var(--text-color); 
+            font-family: sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            min-height: 100vh;
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            box-sizing: border-box;
+            position: relative;
+            background-color: var(--bg-color);
+        }
+
+        /* 👑 背景画像を表示する専用レイヤー（初期画像を設定） */
+        .bg-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            /* 違う画像に固定したい場合は、下のURLをお好みの画像リンクに書き換えてください */
+            background-image: url('https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&w=1920&q=80');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0.35; /* 写真の濃さ（0.1〜1.0） */
+            filter: blur(4px); /* ぼかしの強さ */
+            z-index: -1;
+            transition: background-image 0.5s ease; /* 画像が変わる時にふわっと切り替わる */
+        }
+
+        .container { 
+            max-width: 1100px; 
+            width: 100%; 
+            background: var(--card-bg); 
+            padding: 25px; 
+            border-radius: 16px; 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8); 
+            border: 1px solid var(--border-color); 
+            backdrop-filter: blur(10px); 
+            box-sizing: border-box;
+        }
+        
+        h1 { text-align: center; color: #fff; font-size: 1.6rem; border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; margin-top: 0; margin-bottom: 25px; }
+        
+        .main-layout { display: flex; flex-direction: column; gap: 25px; }
+        .left-content { flex: 1; width: 100%; }
+        .right-content { width: 100%; }
+
+        .columns { display: flex; gap: 20px; margin-bottom: 20px; }
+        .column.current-spec, .column.new-spec { flex: 1; background: rgba(0, 0, 0, 0.4); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); }
+        
+        .column-title { font-weight: bold; margin-bottom: 15px; color: #fff; text-align: center; font-size: 0.9rem; }
+        .input-group { margin-bottom: 10px; }
+        .tire-inputs { display: flex; gap: 5px; }
+        .tire-inputs input { text-align: center; }
+        label { display: block; margin-bottom: 4px; font-size: 0.8rem; color: #aaa; }
+        input { width: 100%; padding: 8px; background: rgba(17, 17, 17, 0.8); border: 1px solid #444; border-radius: 4px; color: #fff; font-size: 1rem; box-sizing: border-box; }
+        input:focus { border-color: var(--accent-color); outline: none; }
+        
+        .visual-area { position: relative; background: #ffffff; padding: 0; border-radius: 8px; margin-bottom: 25px; height: 350px; border: 1px solid #ccc; overflow: hidden; }
+        .viz-label { position: absolute; top: 10px; left: 0; width: 100%; font-size: 0.8rem; font-weight: bold; color: #333; text-align: center; z-index: 5; pointer-events: none; }
+        .pane { height: 100%; box-sizing: border-box; position: relative; }
+        .pane-label { position: absolute; top: 15px; width: 100%; text-align: center; font-size: 0.75rem; font-weight: bold; z-index: 5; pointer-events: none; }
+        .wheel-assembly { position: absolute; transition: all 0.2s ease-out; mix-blend-mode: multiply; }
+        
+        .visual-area.mode-layered { display: block; }
+        .visual-area.mode-layered .pane { position: absolute; top: 0; left: 0; width: 100%; }
+        .visual-area.mode-layered .pane-label { display: none; } 
+        .visual-area.mode-layered .viz-label { display: block; }
+
+        .visual-area.mode-side { display: flex; }
+        .visual-area.mode-side .pane { flex: 1; }
+        .visual-area.mode-side #curPane { border-right: 1px dashed #ccc; }
+        .visual-area.mode-side .pane-label { display: block; } 
+        .visual-area.mode-side .viz-label { display: none; }
+
+        .setup-option { background: rgba(0, 0, 0, 0.4); padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+        .setup-option input[type="radio"], .setup-option input[type="checkbox"] { width: auto; cursor: pointer; transform: scale(1.2); margin: 0; }
+        .setup-option label { display: inline; font-size: 0.9rem; color: #fff; cursor: pointer; font-weight: bold; }
+        .setup-option span { font-size: 0.8rem; color: #888; margin-left: 5px; }
+
+        /* コントロールボックス */
+        .view-control-box { background: rgba(0, 0, 0, 0.4); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); border-left: 4px solid var(--compare-color); margin-bottom: 20px; }
+        .view-control-row { display: flex; align-items: center; gap: 10px; }
+        .view-control-row:not(:last-child) { margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 12px; }
+        .view-control-box input[type="radio"], .view-control-box input[type="checkbox"] { width: auto; cursor: pointer; transform: scale(1.2); margin: 0; }
+        .view-control-box label { display: inline; font-size: 0.9rem; color: #fff; cursor: pointer; font-weight: bold; }
+        .view-control-box span { font-size: 0.8rem; color: #888; margin-left: 5px; }
+
+        /* 結果表示ボックス */
+        .result-box { 
+            background: rgba(17, 17, 17, 0.95); 
+            padding: 20px; 
+            border-radius: 12px; 
+            border: 1px solid var(--accent-color); 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .result-box-title { font-weight: bold; font-size: 1.1rem; color: #fff; margin-bottom: 15px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 8px; }
+        .result-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #222; font-size: 0.95rem; }
+        .result-item:last-child { border-bottom: none; }
+        .diff-val { font-weight: bold; }
+
+        /* スマホ用ボトムシート */
+        .bottom-sheet {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: #111; z-index: 1000;
+            border-radius: 20px 20px 0 0; box-shadow: 0 -10px 25px rgba(0,0,0,0.8); border-top: 3px solid var(--accent-color);
+            transform: translateY(calc(100% - 50px)); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .bottom-sheet.open { transform: translateY(0); }
+        .sheet-toggle { height: 50px; display: flex; justify-content: center; align-items: center; background: #1a1a1a; border-radius: 20px 20px 0 0; cursor: pointer; position: relative; color: #fff; font-weight: bold; font-size: 1rem; }
+        .sheet-toggle::before { content: ''; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 40px; height: 5px; background: #666; border-radius: 3px; }
+        .sheet-content { padding: 15px 25px 35px 25px; }
+
+        /* レスポンシブ対応切り替え */
+        @media (min-width: 900px) {
+            body { padding-bottom: 20px; } 
+            .main-layout { flex-direction: row; align-items: flex-start; }
+            .left-content { flex: 1.4; } 
+            .right-content { flex: 1; position: -webkit-sticky; position: sticky; top: 20px; } 
+            
+            #bottomSheet { display: none; } 
+            .pc-result-area { display: block; } 
+        }
+
+        @media (max-width: 899px) {
+            body { padding-bottom: 80px; } 
+            .columns { flex-direction: column; }
+            .pc-result-area { display: none; } 
+            #bottomSheet { display: block; } 
+        }
+    </style>
+</head>
+<body>
+
+<div id="bgOverlay" class="bg-overlay"></div>
+
+<div class="container">
+    <h1>Wheel Fitment Sim</h1>
+
+    <div class="main-layout">
+        
+        <div class="left-content">
+            <div id="visualArea" class="visual-area mode-layered">
+                <div class="viz-label">現在 (青) ⇔ 変更案 (赤)</div>
+                
+                <div id="curPane" class="pane">
+                    <div class="pane-label" style="color: #2980b9;">【前】現在の仕様</div>
+                    <div id="curAssembly" class="wheel-assembly" style="z-index: 2;"></div>
+                </div>
+                
+                <div id="newPane" class="pane">
+                    <div class="pane-label" style="color: #c0392b;">【後】変更案</div>
+                    <div id="newAssembly" class="wheel-assembly" style="z-index: 3;"></div>
+                </div>
+            </div>
+
+            <div class="view-control-box">
+                <div class="view-control-row">
+                    <span style="font-size: 0.9rem; font-weight: bold; color: #aaa; margin-right: 10px;">表示モード:</span>
+                    <input type="radio" name="viewMode" id="modeLayered" value="layered" checked>
+                    <label for="modeLayered" style="margin-right: 20px;">重ねて比較</label>
+                    
+                    <input type="radio" name="viewMode" id="modeSide" value="side">
+                    <label for="modeSide">並べて比較</label>
+                </div>
+                <div class="view-control-row">
+                    <span style="font-size: 0.9rem; font-weight: bold; color: #aaa; margin-right: 10px;">補助線:</span>
+                    <input type="checkbox" id="showHubLine" checked>
+                    <label for="showHubLine">ハブ基準線を表示する</label>
+                </div>
+                <div class="view-control-row">
+                    <span style="font-size: 0.9rem; font-weight: bold; color: #aaa; margin-right: 10px;">背景画像:</span>
+                    <input type="file" id="bgInput" accept="image/*" style="width: auto; color: #fff; font-size: 0.85rem; cursor: pointer;">
+                    <span style="font-size: 0.8rem; color: #888;">※お好きな写真を背景にできます</span>
+                </div>
+            </div>
+
+            <div class="columns">
+                <div class="column current-spec">
+                    <div class="column-title" style="color: var(--compare-color);">🔹 現在の仕様</div>
+                    <div class="input-group"><label>J数</label><input type="text" id="curJ" value="8.5"></div>
+                    <div class="input-group"><label>インセット</label><input type="text" id="curInset" value="45"></div>
+                    <div class="input-group"><label>スペーサー</label><input type="text" id="curSpacer" value="0"></div>
+                    <div class="input-group"><label>キャンバー (度)</label><input type="text" id="curCamber" value="1"></div>
+                    <div class="input-group">
+                        <label>タイヤサイズ (幅 / 扁平 / インチ)</label>
+                        <div class="tire-inputs">
+                            <input type="text" id="curTWidth" value="225">
+                            <input type="text" id="curTRatio" value="40">
+                            <input type="text" id="curTInch" value="18">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="column new-spec">
+                    <div class="column-title" style="color: var(--new-spec-color);">🔸 変更案</div>
+                    <div class="input-group"><label>J数</label><input type="text" id="newJ" value="10.0"></div>
+                    <div class="input-group"><label>インセット</label><input type="text" id="newInset" value="20"></div>
+                    <div class="input-group"><label>スペーサー</label><input type="text" id="newSpacer" value="0"></div>
+                    <div class="input-group"><label>キャンバー (度)</label><input type="text" id="newCamber" value="3.5"></div>
+                    <div class="input-group">
+                        <label>タイヤサイズ (幅 / 扁平 / インチ)</label>
+                        <div class="tire-inputs">
+                            <input type="text" id="newTWidth" value="215">
+                            <input type="text" id="newTRatio" value="35">
+                            <input type="text" id="newTInch" value="18">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setup-option">
+                <input type="checkbox" id="isStrut">
+                <label for="isStrut">ストラット式サスペンション</label>
+            </div>
+        </div>
+
+        <div class="right-content pc-result-area">
+            <div class="result-box">
+                <div class="result-box-title">📊 計算結果（PC版）</div>
+                <div class="result-item"><span>アウター側（ツラ出幅）:</span><span class="diff-val diffOuter">--</span></div>
+                <div class="result-item"><span>インナー側（サス接近）:</span><span class="diff-val diffInner">--</span></div>
+                <div class="result-item"><span>車高の変化（タイヤ半径差）:</span><span class="diff-val diffHeight">--</span></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div id="bottomSheet" class="bottom-sheet">
+    <div class="sheet-toggle" onclick="toggleSheet()">
+        <span id="toggleText">▲ 計算結果を見る</span>
+    </div>
+    <div class="sheet-content">
+        <div class="result-item"><span>アウター側（ツラ出幅）:</span><span class="diff-val diffOuter">--</span></div>
+        <div class="result-item"><span>インナー側（サス接近）:</span><span class="diff-val diffInner">--</span></div>
+        <div class="result-item"><span>車高の変化（タイヤ半径差）:</span><span class="diff-val diffHeight">--</span></div>
+    </div>
+</div>
+
+<script>
+    // 👑 背景画像をローカルファイルから読み込んで切り替えるJS処理
+    document.getElementById('bgInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                // 選んだ写真を背景レイヤーに適用
+                document.getElementById('bgOverlay').style.backgroundImage = `url('${event.target.result}')`;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    function toggleSheet() {
+        const sheet = document.getElementById('bottomSheet');
+        const text = document.getElementById('toggleText');
+        sheet.classList.toggle('open');
+        text.innerText = sheet.classList.contains('open') ? '▼ 閉じる' : '▲ 計算結果を見る';
+    }
+
+    function getNum(id) {
+        const val = document.getElementById(id).value;
+        const num = parseFloat(val);
+        return isNaN(num) ? 0 : num;
+    }
+
+    function calcDia(width, ratio, inch) {
+        if(width <= 0 || ratio <= 0 || inch <= 0) return 0;
+        return (width * (ratio / 100) * 2) + (inch * 25.4);
+    }
+
+    function updateViz(id, j, inset, spacer, camber, tWidth, tRatio, inch, isNew, showKnuckle, showLine) {
+        const assembly = document.getElementById(id);
+        const dia = calcDia(tWidth, tRatio, inch);
+        if(dia === 0) return;
+
+        const scale = 0.4; 
+        const wwPx = (j * 25.4) * scale;       
+        const twPx = tWidth * scale;           
+        const totalHPx = dia * scale;          
+        const wheelHPx = (inch * 25.4) * scale;
+        const sideHPx = (totalHPx - wheelHPx) / 2; 
+
+        const maxWPx = Math.max(wwPx, twPx);
+        const tireX1 = (maxWPx - twPx) / 2;
+        const tireX2 = tireX1 + twPx;
+        const wheelX1 = (maxWPx - wwPx) / 2;
+        const wheelX2 = wheelX1 + wwPx;
+
+        const polygonPath = `polygon(${tireX1}px 0px, ${tireX2}px 0px, ${wheelX2}px ${sideHPx}px, ${wheelX2}px ${sideHPx + wheelHPx}px, ${tireX2}px ${totalHPx}px, ${tireX1}px ${totalHPx}px, ${wheelX1}px ${sideHPx + wheelHPx}px, ${wheelX1}px ${sideHPx}px)`;
+        const pointsStr = `${tireX1},0 ${tireX2},0 ${wheelX2},${sideHPx} ${wheelX2},${sideHPx + wheelHPx} ${tireX2},${totalHPx} ${tireX1},${totalHPx} ${wheelX1},${sideHPx + wheelHPx} ${wheelX1},${sideHPx}`;
+
+        const color = isNew ? 'var(--new-spec-color)' : 'var(--compare-color)';
+        const bgColor = isNew ? 'rgba(192, 41, 43, 0.6)' : 'rgba(41, 128, 185, 0.6)';
+        const gradTop = isNew ? 'rgba(231, 76, 60, 0.3)' : 'rgba(52, 152, 219, 0.3)';
+
+        const hubX = (maxWPx / 2) + (inset * scale) - (spacer * scale);
+        const centerY = totalHPx / 2;
+
+        assembly.style.width = maxWPx + 'px';
+        assembly.style.height = totalHPx + 'px';
+        assembly.style.transformOrigin = `${hubX}px ${centerY}px`;
+        assembly.style.left = `calc(50% - ${hubX}px)`;
+        assembly.style.top = `calc(50% - ${centerY}px)`; 
+        assembly.style.transform = `rotate(-${camber}deg)`;
+
+        assembly.innerHTML = `
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; clip-path: ${polygonPath}; background: linear-gradient(to bottom, ${gradTop} 0px, ${gradTop} ${sideHPx}px, ${bgColor} ${sideHPx}px, ${bgColor} ${sideHPx + wheelHPx}px, ${gradTop} ${sideHPx + wheelHPx}px, ${gradTop} 100%);"></div>
+            <svg style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; z-index: 10;">
+                <polygon points="${pointsStr}" fill="none" stroke="${color}" stroke-width="0.5" />
+                <line x1="${hubX}" y1="${centerY - 220}" x2="${hubX}" y2="${centerY + 220}" stroke="${color}" stroke-width="1.5" stroke-dasharray="4 4" style="display: ${showLine ? 'block' : 'none'};"/>
+                <g style="display: ${showKnuckle ? 'block' : 'none'};">
+                    <line x1="${hubX}" y1="${centerY - 30}" x2="${hubX}" y2="${centerY + 30}" stroke="${color}" stroke-width="6" stroke-linecap="round"/>
+                    <line x1="${hubX}" y1="${centerY}" x2="${hubX - 20}" y2="${centerY}" stroke="${color}" stroke-width="5" stroke-linecap="round"/>
+                    <line x1="${hubX - 20}" y1="${centerY}" x2="${hubX - 30}" y2="${centerY - 60}" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+                    <line x1="${hubX - 20}" y1="${centerY}" x2="${hubX - 25}" y2="${centerY + 60}" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+                    <circle cx="${hubX - 30}" cy="${centerY - 60}" r="5" fill="${color}" />
+                    <circle cx="${hubX - 25}" cy="${centerY + 60}" r="5" fill="${color}" />
+                    <circle cx="${hubX - 20}" cy="${centerY}" r="6" fill="${color}" />
+                </g>
+            </svg>
+        `;
+    }
+
+    function compare() {
+        const c = { j: getNum('curJ'), i: getNum('curInset'), s: getNum('curSpacer'), a: getNum('curCamber'), tw: getNum('curTWidth'), tr: getNum('curTRatio'), ti: getNum('curTInch') };
+        const n = { j: getNum('newJ'), i: getNum('newInset'), s: getNum('newSpacer'), a: getNum('newCamber'), tw: getNum('newTWidth'), tr: getNum('newTRatio'), ti: getNum('newTInch') };
+        const isStrut = document.getElementById('isStrut').checked;
+        const showHubLine = document.getElementById('showHubLine').checked;
+        const modeLayered = document.getElementById('modeLayered').checked;
+        
+        document.getElementById('visualArea').className = modeLayered ? 'visual-area mode-layered' : 'visual-area mode-side';
+
+        const curDia = calcDia(c.tw, c.tr, c.ti);
+        const newDia = calcDia(n.tw, n.tr, n.ti);
+
+        updateViz('curAssembly', c.j, c.i, c.s, c.a, c.tw, c.tr, c.ti, false, !modeLayered, showHubLine);
+        updateViz('newAssembly', n.j, n.i, n.s, n.a, n.tw, n.tr, n.ti, true, !modeLayered, showHubLine);
+
+        const curFinalOut = ((c.j * 25.4) / 2) - c.i + c.s - ((curDia / 2) * Math.sin(c.a * Math.PI / 180));
+        const newFinalOut = ((n.j * 25.4) / 2) - n.i + n.s - ((newDia / 2) * Math.sin(n.a * Math.PI / 180));
+        const diffOut = newFinalOut - curFinalOut;
+
+        const curCamberInFactor = isStrut ? 0 : ((curDia / 2) * Math.sin(c.a * Math.PI / 180));
+        const newCamberInFactor = isStrut ? 0 : ((newDia / 2) * Math.sin(n.a * Math.PI / 180));
+        const curFinalIn = (((c.j * 25.4) / 2) + c.i - c.s) + curCamberInFactor;
+        const newFinalIn = (((n.j * 25.4) / 2) + n.i - n.s) + newCamberInFactor;
+        const diffIn = newFinalIn - curFinalIn;
+
+        const diffHeight = (newDia - curDia) / 2;
+
+        document.querySelectorAll('.diffOuter').forEach(el => {
+            el.innerText = diffOut >= 0 ? `今より +${diffOut.toFixed(1)} mm 外へ` : `今より ${diffOut.toFixed(1)} mm 内へ`;
+            el.style.color = diffOut >= 0 ? 'var(--accent-color)' : 'var(--compare-color)';
+        });
+
+        document.querySelectorAll('.diffInner').forEach(el => {
+            el.innerText = diffIn >= 0 ? `今より +${diffIn.toFixed(1)} mm サスへ接近` : `今より ${diffIn.toFixed(1)} mm 余裕増加`;
+            el.style.color = diffIn >= 0 ? '#ffcc00' : '#00ff7f';
+        });
+
+        document.querySelectorAll('.diffHeight').forEach(el => {
+            if (diffHeight === 0) { el.innerText = `変化なし (0.0 mm)`; el.style.color = '#fff'; }
+            else if (diffHeight > 0) { el.innerText = `今より +${diffHeight.toFixed(1)} mm 上昇`; el.style.color = '#ffcc00'; }
+            else { el.innerText = `今より ${diffHeight.toFixed(1)} mm 下降`; el.style.color = '#00ff7f'; }
+        });
+    }
+
+    const ids = ['curJ','curInset','curSpacer','curCamber','curTWidth','curTRatio','curTInch','newJ','newInset','newSpacer','newCamber','newTWidth','newTRatio','newTInch'];
+    ids.forEach(id => document.getElementById(id).addEventListener('input', compare));
+    document.getElementById('isStrut').addEventListener('change', compare);
+    document.getElementById('showHubLine').addEventListener('change', compare);
+    document.getElementsByName('viewMode').forEach(radio => radio.addEventListener('change', compare));
+    
+    compare();
+</script>
+
+</body>
+</html>
