@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wheel Fitment Sim</title>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --card-bg: #1a1a1a;
+            --text-color: #e0e0e0;
+            --accent-color: #ff4500; 
+            --compare-color: #00bfff; 
+            --new-spec-color: #e74c3c; 
+            --border-color: #333;
+        }
+        
+        body { background-color: var(--bg-color); color: var(--text-color); font-family: sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { max-width: 850px; width: 100%; background: var(--card-bg); padding: 25px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); border: 1px solid var(--border-color); }
+        
+        h1 { text-align: center; color: #fff; font-size: 1.6rem; border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; margin-top: 0; margin-bottom: 25px; }
+        
+        .columns { display: flex; gap: 20px; margin-bottom: 20px; }
+        .column.current-spec, .column.new-spec { flex: 1; background: #222; padding: 15px; border-radius: 8px; border: 1px solid #444; }
+        .column-title { font-weight: bold; margin-bottom: 15px; color: #fff; text-align: center; font-size: 0.9rem; }
+        .input-group { margin-bottom: 10px; }
+        
+        .tire-inputs { display: flex; gap: 5px; }
+        .tire-inputs input { text-align: center; }
+        
+        .imperial-input { display: none; } 
+        .mode-imperial .metric-input { display: none; }
+        .mode-imperial label.imperial-input { display: block; }
+        .mode-imperial div.imperial-input { display: flex; }
+
+        label { display: block; margin-bottom: 4px; font-size: 0.8rem; color: #aaa; }
+        input[type="number"] { width: 100%; padding: 8px; background: #111; border: 1px solid #444; border-radius: 4px; color: #fff; font-size: 1rem; box-sizing: border-box; }
+        input[type="number"]:focus { border-color: var(--accent-color); outline: none; }
+        
+        .visual-area { position: relative; background: #ffffff; padding: 0; border-radius: 8px; margin-bottom: 25px; height: 350px; border: 1px solid #ccc; overflow: hidden; }
+        .viz-label { position: absolute; top: 10px; left: 0; width: 100%; font-size: 0.8rem; font-weight: bold; color: #333; text-align: center; z-index: 5; pointer-events: none; }
+        
+        .pane { height: 100%; box-sizing: border-box; position: relative; }
+        .pane-label { position: absolute; top: 15px; width: 100%; text-align: center; font-size: 0.75rem; font-weight: bold; z-index: 5; pointer-events: none; }
+        
+        /* 🚨 修正箇所1: mix-blend-mode はiOSでバグりやすいため opacity に変更 */
+        .wheel-assembly { position: absolute; transition: all 0.2s ease-out; opacity: 0.85; }
+        
+        .visual-area.mode-layered { display: block; }
+        .visual-area.mode-layered .pane { position: absolute; top: 0; left: 0; width: 100%; }
+        .visual-area.mode-layered .pane-label { display: none; } 
+        .visual-area.mode-layered .viz-label { display: block; }
+
+        .visual-area.mode-side { display: flex; }
+        .visual-area.mode-side .pane { flex: 1; }
+        .visual-area.mode-side #curPane { border-right: 1px dashed #ccc; }
+        .visual-area.mode-side .pane-label { display: block; } 
+        .visual-area.mode-side .viz-label { display: none; }
+
+        .setup-option { background: #222; padding: 12px 15px; border-radius: 8px; border: 1px solid #444; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+        .setup-option input[type="radio"], .setup-option input[type="checkbox"] { width: auto; cursor: pointer; transform: scale(1.2); margin: 0; }
+        .setup-option label { display: inline; font-size: 0.9rem; color: #fff; cursor: pointer; font-weight: bold; }
+        .setup-option span { font-size: 0.8rem; color: #888; margin-left: 5px; }
+
+        .view-control-box { background: #222; padding: 15px; border-radius: 8px; border: 1px solid #444; border-left: 4px solid var(--compare-color); margin-bottom: 20px; }
+        .view-control-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .view-control-row:not(:last-child) { margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 12px; }
+        .view-control-box input[type="radio"], .view-control-box input[type="checkbox"] { width: auto; cursor: pointer; transform: scale(1.2); margin: 0; }
+        .view-control-box label { display: inline; font-size: 0.9rem; color: #fff; cursor: pointer; font-weight: bold; margin-right: 15px; }
+
+        .result-box { background: #111; padding: 15px; border-radius: 8px; border: 1px solid var(--accent-color); margin-top: 15px; }
+        .result-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #222; font-size: 1rem; }
+        .result-item:last-child { border-bottom: none; }
+        .diff-val { font-weight: bold; }
+        @media (max-width: 650px) { .columns { flex-direction: column; } }
+    </style>
+</head>
+<body>
+
+<div class="container" id="mainContainer">
+    <h1>Wheel Fitment Sim</h1>
+    
+    <div id="visualArea" class="visual-area mode-layered">
+        <div class="viz-label">現在 (青) ⇔ 変更案 (赤)</div>
+        <div id="curPane" class="pane">
+            <div class="pane-label" style="color: #2980b9;">【前】現在の仕様</div>
+            <div id="curAssembly" class="wheel-assembly" style="z-index: 2;"></div>
+        </div>
+        <div id="newPane" class="pane">
+            <div class="pane-label" style="color: #c0392b;">【後】変更案</div>
+            <div id="newAssembly" class="wheel-assembly" style="z-index: 3;"></div>
+        </div>
+    </div>
+
+    <div class="view-control-box">
+        <div class="view-control-row">
+            <span style="font-size: 0.9rem; font-weight: bold; color: #aaa; margin-right: 10px;">表示モード:</span>
+            <input type="radio" name="viewMode" id="modeLayered" value="layered" checked>
+            <label for="modeLayered">重ねて比較</label>
+            <input type="radio" name="viewMode" id="modeSide" value="side">
+            <label for="modeSide">左右に並べて比較</label>
+            
+            <span style="margin-left: 10px; border-left: 1px solid #555; padding-left: 15px;">
+                <input type="checkbox" id="showHubLine" checked>
+                <label for="showHubLine" style="margin-right: 0;">ハブ基準線を表示</label>
+            </span>
+        </div>
+        
+        <div class="view-control-row">
+            <span style="font-size: 0.9rem; font-weight: bold; color: #aaa; margin-right: 10px;">タイヤ表記:</span>
+            <input type="radio" name="tireMode" id="tireMetric" value="metric" checked>
+            <label for="tireMetric">ミリ (例: 225/40R18)</label>
+            <input type="radio" name="tireMode" id="tireImperial" value="imperial">
+            <label for="tireImperial">インチ (例: 35×12.50R18)</label>
+        </div>
+    </div>
+
+    <div class="columns">
+        <div class="column current-spec">
+            <div class="column-title" style="color: var(--compare-color);">🔹 現在の仕様</div>
+            <div class="input-group"><label>J数 (3〜30)</label><input type="number" id="curJ" value="8.5" min="3" max="30" step="0.1"></div>
+            <div class="input-group"><label>インセット (-200〜200)</label><input type="number" id="curInset" value="45" min="-200" max="200" step="1"></div>
+            <div class="input-group"><label>スペーサー (0〜100mm)</label><input type="number" id="curSpacer" value="0" min="0" max="100" step="1"></div>
+            <div class="input-group"><label>キャンバー (±30度)</label><input type="number" id="curCamber" value="1" min="-30" max="30" step="0.1"></div>
+            
+            <div class="input-group">
+                <label class="metric-input">タイヤ (幅 / 扁平 / インチ)</label>
+                <label class="imperial-input">タイヤ (外径 / 幅 / リム径)</label>
+                
+                <div class="tire-inputs metric-input">
+                    <input type="number" id="curTWidth" value="225" min="135" max="505" step="5" title="幅(mm)">
+                    <input type="number" id="curTRatio" value="40" min="20" max="100" step="5" title="扁平(%)">
+                    <input type="number" id="curTInch" value="18" min="10" max="35" step="1" title="インチ">
+                </div>
+                <div class="tire-inputs imperial-input">
+                    <input type="number" id="curTOuterDia" value="25.1" min="18" max="54" step="0.1" title="外径(inch)">
+                    <input type="number" id="curTWidthInch" value="8.9" min="4" max="21" step="0.1" title="幅(inch)">
+                    <input type="number" id="curTInchImp" value="18" min="10" max="35" step="1" title="リム径(inch)">
+                </div>
+            </div>
+        </div>
+        
+        <div class="column new-spec">
+            <div class="column-title" style="color: var(--new-spec-color);">🔸 変更案</div>
+            <div class="input-group"><label>J数 (3〜30)</label><input type="number" id="newJ" value="10.0" min="3" max="30" step="0.1"></div>
+            <div class="input-group"><label>インセット (-200〜200)</label><input type="number" id="newInset" value="20" min="-200" max="200" step="1"></div>
+            <div class="input-group"><label>スペーサー (0〜100mm)</label><input type="number" id="newSpacer" value="0" min="0" max="100" step="1"></div>
+            <div class="input-group"><label>キャンバー (±30度)</label><input type="number" id="newCamber" value="3.5" min="-30" max="30" step="0.1"></div>
+            
+            <div class="input-group">
+                <label class="metric-input">タイヤ (幅 / 扁平 / インチ)</label>
+                <label class="imperial-input">タイヤ (外径 / 幅 / リム径)</label>
+                
+                <div class="tire-inputs metric-input">
+                    <input type="number" id="newTWidth" value="215" min="135" max="505" step="5" title="幅(mm)">
+                    <input type="number" id="newTRatio" value="35" min="20" max="100" step="5" title="扁平(%)">
+                    <input type="number" id="newTInch" value="18" min="10" max="35" step="1" title="インチ">
+                </div>
+                <div class="tire-inputs imperial-input">
+                    <input type="number" id="newTOuterDia" value="23.9" min="18" max="54" step="0.1" title="外径(inch)">
+                    <input type="number" id="newTWidthInch" value="8.5" min="4" max="21" step="0.1" title="幅(inch)">
+                    <input type="number" id="newTInchImp" value="18" min="10" max="35" step="1" title="リム径(inch)">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="setup-option">
+        <input type="checkbox" id="isStrut">
+        <label for="isStrut">ストラット式サスペンション</label>
+        <span>(アッパーマウント側でキャンバーを調整する場合にチェック)</span>
+    </div>
+
+    <div class="result-box">
+        <div class="result-item"><span>アウター側（ツラ出幅）:</span><span class="diff-val" id="diffOuter">--</span></div>
+        <div class="result-item"><span>インナー側（サス等への接近）:</span><span class="diff-val" id="diffInner">--</span></div>
+        <div class="result-item"><span>車高の変化（タイヤ半径差）:</span><span class="diff-val" id="diffHeight">--</span></div>
+    </div>
+</div>
+
+<script>
+    // 🚨 修正箇所2: 画面が見えなくても何が起きたか分かるように、エラーをポップアップで出す安全装置
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+        alert("システムエラー発生: " + msg + "\n行番号: " + lineNo);
+        return false;
+    };
+
+    function getSafeNum(id) {
+        const el = document.getElementById(id);
+        if (!el) return 0;
+        
+        let val = Number(el.value);
+        
+        const min = el.hasAttribute('min') ? Number(el.min) : -Infinity;
+        const max = el.hasAttribute('max') ? Number(el.max) : Infinity;
+
+        if (isNaN(val)) {
+            val = (min !== -Infinity) ? min : 0;
+        }
+        
+        if (val < min) val = min;
+        if (val > max) val = max;
+        
+        return val;
+    }
+
+    function calcDiaMetric(width, ratio, inch) {
+        if(width <= 0 || ratio <= 0 || inch <= 0) return 0;
+        return (width * (ratio / 100) * 2) + (inch * 25.4);
+    }
+
+    function updateViz(id, j, inset, spacer, camber, tWidth_mm, totalHPx_real, inch, isNew, showKnuckle, showLine) {
+        const assembly = document.getElementById(id);
+        if(!assembly) return;
+
+        if(totalHPx_real <= 0 || isNaN(totalHPx_real)) {
+            assembly.innerHTML = '';
+            return;
+        }
+
+        const scale = 0.35; 
+        const wwPx = (j * 25.4) * scale;       
+        const twPx = tWidth_mm * scale;           
+        const totalHPx = totalHPx_real * scale;          
+        const wheelHPx = (inch * 25.4) * scale;
+        const sideHPx = (totalHPx - wheelHPx) / 2; 
+
+        const maxWPx = Math.max(wwPx, twPx);
+        const tireX1 = (maxWPx - twPx) / 2;
+        const tireX2 = tireX1 + twPx;
+        const wheelX1 = (maxWPx - wwPx) / 2;
+        const wheelX2 = wheelX1 + wwPx;
+
+        const polygonPath = `polygon(
+            ${tireX1}px 0px, ${tireX2}px 0px, 
+            ${wheelX2}px ${sideHPx}px, ${wheelX2}px ${sideHPx + wheelHPx}px, 
+            ${tireX2}px ${totalHPx}px, ${tireX1}px ${totalHPx}px, 
+            ${wheelX1}px ${sideHPx + wheelHPx}px, ${wheelX1}px ${sideHPx}px
+        )`;
+
+        const pointsStr = `${tireX1},0 ${tireX2},0 ${wheelX2},${sideHPx} ${wheelX2},${sideHPx + wheelHPx} ${tireX2},${totalHPx} ${tireX1},${totalHPx} ${wheelX1},${sideHPx + wheelHPx} ${wheelX1},${sideHPx}`;
+
+        const color = isNew ? 'var(--new-spec-color)' : 'var(--compare-color)';
+        const bgColor = isNew ? 'rgba(192, 41, 43, 0.6)' : 'rgba(41, 128, 185, 0.6)';
+        const gradTop = isNew ? 'rgba(231, 76, 60, 0.3)' : 'rgba(52, 152, 219, 0.3)';
+
+        const hubX = (maxWPx / 2) + (inset * scale) - (spacer * scale);
+        const centerY = totalHPx / 2;
+
+        assembly.style.width = maxWPx + 'px';
+        assembly.style.height = totalHPx + 'px';
+        assembly.style.transformOrigin = `${hubX}px ${centerY}px`;
+        assembly.style.left = `calc(50% - ${hubX}px)`;
+        assembly.style.top = `calc(50% - ${centerY}px)`; 
+        assembly.style.transform = `rotate(-${camber}deg)`;
+
+        // 🚨 修正箇所3: iOSのバグ回避のため -webkit-clip-path を追加
+        assembly.innerHTML = `
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; -webkit-clip-path: ${polygonPath}; clip-path: ${polygonPath}; background: linear-gradient(to bottom, ${gradTop} 0px, ${gradTop} ${sideHPx}px, ${bgColor} ${sideHPx}px, ${bgColor} ${sideHPx + wheelHPx}px, ${gradTop} ${sideHPx + wheelHPx}px, ${gradTop} 100%);"></div>
+            <svg style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; z-index: 10;">
+                <polygon points="${pointsStr}" fill="none" stroke="${color}" stroke-width="0.5" />
+                <line x1="${hubX}" y1="${centerY - 250}" x2="${hubX}" y2="${centerY + 250}" stroke="${color}" stroke-width="1.5" stroke-dasharray="4 4" style="display: ${showLine ? 'block' : 'none'};"/>
+                <g style="display: ${showKnuckle ? 'block' : 'none'};">
+                    <line x1="${hubX}" y1="${centerY - 30}" x2="${hubX}" y2="${centerY + 30}" stroke="${color}" stroke-width="6" stroke-linecap="round"/>
+                    <line x1="${hubX}" y1="${centerY}" x2="${hubX - 20}" y2="${centerY}" stroke="${color}" stroke-width="5" stroke-linecap="round"/>
+                    <line x1="${hubX - 20}" y1="${centerY}" x2="${hubX - 30}" y2="${centerY - 60}" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+                    <line x1="${hubX - 20}" y1="${centerY}" x2="${hubX - 25}" y2="${centerY + 60}" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+                    <circle cx="${hubX - 30}" cy="${centerY - 60}" r="5" fill="${color}" />
+                    <circle cx="${hubX - 25}" cy="${centerY + 60}" r="5" fill="${color}" />
+                    <circle cx="${hubX - 20}" cy="${centerY}" r="6" fill="${color}" />
+                </g>
+            </svg>
+        `;
+    }
+
+    function compare() {
+        try {
+            const strutEl = document.getElementById('isStrut');
+            const hubLineEl = document.getElementById('showHubLine');
+            const modeLayeredEl = document.getElementById('modeLayered');
+            const tireModeEl = document.querySelector('input[name="tireMode"]:checked');
+
+            if (!strutEl || !hubLineEl || !modeLayeredEl || !tireModeEl) return; 
+
+            const isStrut = strutEl.checked;
+            const showHubLine = hubLineEl.checked;
+            const modeLayered = modeLayeredEl.checked;
+            const tireMode = tireModeEl.value;
+
+            const visArea = document.getElementById('visualArea');
+            const mainCont = document.getElementById('mainContainer');
+            if (visArea) visArea.className = modeLayered ? 'visual-area mode-layered' : 'visual-area mode-side';
+            if (mainCont) mainCont.className = tireMode === 'imperial' ? 'container mode-imperial' : 'container';
+
+            const c_j = getSafeNum('curJ'), c_i = getSafeNum('curInset'), c_s = getSafeNum('curSpacer'), c_a = getSafeNum('curCamber');
+            const n_j = getSafeNum('newJ'), n_i = getSafeNum('newInset'), n_s = getSafeNum('newSpacer'), n_a = getSafeNum('newCamber');
+
+            let c_tw, c_dia, c_inch;
+            let n_tw, n_dia, n_inch;
+
+            if (tireMode === 'metric') {
+                c_tw = getSafeNum('curTWidth');
+                c_inch = getSafeNum('curTInch');
+                c_dia = calcDiaMetric(c_tw, getSafeNum('curTRatio'), c_inch);
+                
+                n_tw = getSafeNum('newTWidth');
+                n_inch = getSafeNum('newTInch');
+                n_dia = calcDiaMetric(n_tw, getSafeNum('newTRatio'), n_inch);
+            } else {
+                c_tw = getSafeNum('curTWidthInch') * 25.4;
+                c_dia = getSafeNum('curTOuterDia') * 25.4;
+                c_inch = getSafeNum('curTInchImp');
+
+                n_tw = getSafeNum('newTWidthInch') * 25.4;
+                n_dia = getSafeNum('newTOuterDia') * 25.4;
+                n_inch = getSafeNum('newTInchImp');
+            }
+
+            updateViz('curAssembly', c_j, c_i, c_s, c_a, c_tw, c_dia, c_inch, false, !modeLayered, showHubLine);
+            updateViz('newAssembly', n_j, n_i, n_s, n_a, n_tw, n_dia, n_inch, true, !modeLayered, showHubLine);
+
+            const curFinalOut = ((c_j * 25.4) / 2) - c_i + c_s - ((c_dia / 2) * Math.sin(c_a * Math.PI / 180));
+            const newFinalOut = ((n_j * 25.4) / 2) - n_i + n_s - ((n_dia / 2) * Math.sin(n_a * Math.PI / 180));
+            const diffOut = newFinalOut - curFinalOut;
+
+            const curCamberInFactor = isStrut ? 0 : ((c_dia / 2) * Math.sin(c_a * Math.PI / 180));
+            const newCamberInFactor = isStrut ? 0 : ((n_dia / 2) * Math.sin(n_a * Math.PI / 180));
+
+            const curFinalIn = (((c_j * 25.4) / 2) + c_i - c_s) + curCamberInFactor;
+            const newFinalIn = (((n_j * 25.4) / 2) + n_i - n_s) + newCamberInFactor;
+            const diffIn = newFinalIn - curFinalIn;
+
+            const diffHeight = (n_dia - c_dia) / 2;
+
+            // 🚨 修正箇所4: NaN（計算不可）になった場合に空白になるのを防ぐ
+            if (isNaN(diffOut) || isNaN(diffIn) || isNaN(diffHeight)) {
+                throw new Error("入力値の一部が計算できない状態です");
+            }
+
+            const outEl = document.getElementById('diffOuter');
+            if(outEl) {
+                outEl.innerText = diffOut >= 0 ? `今より ${diffOut.toFixed(1)} mm 外へ出ます` : `今より ${Math.abs(diffOut).toFixed(1)} mm 内へ入ります`;
+                outEl.style.color = diffOut >= 0 ? 'var(--accent-color)' : 'var(--compare-color)';
+            }
+
+            const inEl = document.getElementById('diffInner');
+            if(inEl) {
+                inEl.innerText = diffIn >= 0 ? `今より ${diffIn.toFixed(1)} mm サスへ接近` : `今より ${Math.abs(diffIn).toFixed(1)} mm 余裕増加`;
+                inEl.style.color = diffIn >= 0 ? '#ffcc00' : '#00ff7f';
+            }
+
+            const heightEl = document.getElementById('diffHeight');
+            if(heightEl) {
+                if (Math.abs(diffHeight) < 0.1) {
+                    heightEl.innerText = `変化なし (0.0 mm)`;
+                    heightEl.style.color = '#fff';
+                } else if (diffHeight > 0) {
+                    heightEl.innerText = `今より ${diffHeight.toFixed(1)} mm 上がります`;
+                    heightEl.style.color = '#ffcc00';
+                } else {
+                    heightEl.innerText = `今より ${Math.abs(diffHeight).toFixed(1)} mm 下がります`;
+                    heightEl.style.color = '#00ff7f';
+                }
+            }
+        } catch (error) {
+            alert("計算処理でエラーが起きました: " + error.message);
+        }
+    }
+
+    const inputIds = [
+        'curJ','curInset','curSpacer','curCamber','curTWidth','curTRatio','curTInch','curTOuterDia','curTWidthInch','curTInchImp',
+        'newJ','newInset','newSpacer','newCamber','newTWidth','newTRatio','newTInch','newTOuterDia','newTWidthInch','newTInchImp'
+    ];
+    
+    // 🌟 今回の追加・変更箇所：入力欄ごとにイベントを設定
+    for (let i = 0; i < inputIds.length; i++) {
+        const el = document.getElementById(inputIds[i]);
+        if(el) {
+            // 文字を打っている最中などにリアルタイムで計算・反映する処理
+            el.addEventListener('input', compare);
+            
+            // エンターを押した時、または入力欄からカーソルが外れた時に「値そのものを書き換える」処理
+            el.addEventListener('change', function() {
+                let val = Number(this.value);
+                
+                // HTML側に max 属性があれば上限をチェック
+                if (this.hasAttribute('max')) {
+                    const max = Number(this.max);
+                    if (val > max) this.value = max;
+                }
+                
+                // HTML側に min 属性があれば下限をチェック
+                if (this.hasAttribute('min')) {
+                    const min = Number(this.min);
+                    if (val < min) this.value = min;
+                }
+                
+                // 書き換えた値で再度シミュレーターを更新
+                compare();
+            });
+        }
+    }
+    
+    const isStrutEl = document.getElementById('isStrut');
+    if(isStrutEl) isStrutEl.addEventListener('change', compare);
+    
+    const showHubLineEl = document.getElementById('showHubLine');
+    if(showHubLineEl) showHubLineEl.addEventListener('change', compare);
+    
+    const radios = document.querySelectorAll('input[type="radio"]');
+    for (let i = 0; i < radios.length; i++) {
+        radios[i].addEventListener('change', compare);
+    }
+    
+    compare();
+</script>
+
+</body>
+</html>
